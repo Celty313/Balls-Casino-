@@ -9297,7 +9297,8 @@
   /* ---------- online play: one room code, the host picks the game ---------- */
   var MP_SIG = window.MP_SIGNAL || 'wss://0.peerjs.com/peerjs?key=peerjs';
   var MP_ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' },
-    { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }] };
+    { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: ['turn:staticauth.openrelay.metered.ca:80', 'turn:staticauth.openrelay.metered.ca:443', 'turns:staticauth.openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }] };
   function mpNoop() {}
   function mpClean(x, n) { return String(x == null ? '' : x).replace(/[^\w \-'.!]/g, '').slice(0, n || 12); }
   function mpName() { return mpClean(save.mpName, 12) || 'Player'; }
@@ -9589,6 +9590,55 @@
     updateMoney(net); persist(); setControls();
   }
 
+
+  /* ----- backup route: when two phones cannot link directly, the game messages ride the same free public message boards the lobby list uses ----- */
+  function fbBase(code) { return 'ballscasino/v1/rt/' + lbHash('bc-rt-' + code) + '/'; }
+  function fbHostMsg(topic, text, c) {
+    var base, gid, id, peer, fdc;
+    if (MP.role !== 'host' || !MP.code) return;
+    base = fbBase(MP.code);
+    if (topic === base + 'join') {
+      try { gid = JSON.parse(text).g; } catch (e) { return; }
+      if (!/^[a-z0-9]{10}$/.test(gid || '')) return;
+      id = 'r' + gid;
+      fdc = { readyState: 'open', onmessage: null, onclose: null, send: function (t) { try { c.ws.send(lbPubPkt(base + 'h/' + gid, t, false)); } catch (e) {} }, close: function () { this.readyState = 'closed'; } };
+      if (MP.peers[id]) { MP.peers[id].dc.send('{"t":"ack"}'); return; }
+      peer = { id: id, pc: { close: mpNoop }, dc: fdc, slot: -1, cand: [], ready: true, seen: Date.now(), joined: false, want: false, nm: '', ball: 'pale', hat: '', money: 0, st: { bet: 0, net: 0, m: 0 } };
+      MP.peers[id] = peer;
+      fdc.onmessage = function (ev) { mpHostMsg(peer, ev.data); };
+      fdc.onclose = function () { mpDrop(peer); };
+      fdc.send('{"t":"ack"}');
+    } else if (topic.indexOf(base + 'g/') === 0) {
+      peer = MP.peers['r' + topic.slice(base.length + 2)];
+      if (peer && peer.dc && peer.dc.onmessage) peer.dc.onmessage({ data: text });
+    }
+  }
+  function fbJoin(code, onOpen) {
+    var base = fbBase(code), gid = mpRand(10), conns = [], chosen = null, done = false, fdc = null, rj = 0, H;
+    function stop() { clearInterval(rj); conns.forEach(function (x) { lbClose(x); }); }
+    function hello(c) { try { c.ws.send(lbPubPkt(base + 'join', JSON.stringify({ g: gid }), false)); } catch (e) {} }
+    lbUrls().forEach(function (u) {
+      conns.push(lbConn(u, null, function (c) {
+        try { c.ws.send(lbSubPkt(base + 'h/' + gid)); } catch (e) {}
+        hello(c);
+      }, function (topic, text, c) {
+        if (topic !== base + 'h/' + gid) return;
+        if (!done) {
+          done = true; chosen = c; clearInterval(rj);
+          conns.forEach(function (x) { if (x !== c) lbClose(x); });
+          fdc = { readyState: 'open', onmessage: null, onclose: null, send: function (t) { try { c.ws.send(lbPubPkt(base + 'g/' + gid, t, false)); } catch (e) {} }, close: function () { this.readyState = 'closed'; lbClose(c); } };
+          onOpen(fdc); return;
+        }
+        if (fdc && fdc.onmessage) fdc.onmessage({ data: text });
+      }, function (c) {
+        if (c === chosen && fdc && fdc.readyState === 'open') { fdc.readyState = 'closed'; if (fdc.onclose) fdc.onclose(); }
+      }));
+    });
+    rj = setInterval(function () { conns.forEach(function (x) { if (x.ok && !done) hello(x); }); }, 3000);
+    H = { stop: stop };
+    return H;
+  }
+
   /* ----- host ----- */
   function mpBeat() {
     clearInterval(MP.hb2);
@@ -9639,8 +9689,8 @@
     if (!id || !pl.sdp) return;
     if (MP.peers[id]) { try { MP.peers[id].pc.close(); } catch (e) {} }
     pc = new RTCPeerConnection(MP_ICE);
-    peer = { id: id, pc: pc, dc: null, slot: -1, cand: [], ready: false, seen: Date.now(), joined: false, want: false, nm: '', ball: 'pale', hat: '', money: 0, st: { bet: 0, net: 0, m: 0 } };
-    MP.peers[id] = peer;
+    peer = { id: id, pc: pc, dc: null, slot: -1, cand: (MP.early && MP.early[id]) || [], ready: false, seen: Date.now(), joined: false, want: false, nm: '', ball: 'pale', hat: '', money: 0, st: { bet: 0, net: 0, m: 0 } };
+    MP.peers[id] = peer; if (MP.early) delete MP.early[id];
     pc.onicecandidate = function (e) { if (e.candidate) mpWS({ type: 'CANDIDATE', dst: id, payload: { candidate: e.candidate, type: 'data', connectionId: pl.connectionId } }); };
     pc.ondatachannel = function (e) {
       peer.dc = e.channel;
@@ -9657,7 +9707,8 @@
   }
   function mpHostCand(m) {
     var peer = MP.peers[m.src], c = m.payload && m.payload.candidate;
-    if (!peer || !c) return;
+    if (!c) return;
+    if (!peer) { MP.early = MP.early || {}; (MP.early[m.src] = MP.early[m.src] || []).push(c); return; }
     if (peer.ready) peer.pc.addIceCandidate(c).catch(mpNoop); else peer.cand.push(c);
   }
   function mpPeerIn(peer, m) {
@@ -9727,31 +9778,42 @@
     code = String(code || '').toUpperCase().replace(/[^A-Z]/g, '');
     if (code.length !== 4) { mpNote('Type the 4 letter code from your friend.'); return; }
     MP.busy = true; mpNote('Connecting...');
-    var pc, dc, cid = 'c' + mpRand(8), up = false, ready = false, cand = [], to;
+    var pc, dc, cid = 'c' + mpRand(8), up = false, ready = false, cand = [], to, rto = 0, fbH = null, sent = false, pend = [], relay = false, gotAns = false;
     var hostId = mpId(code);
-    function fail(t) { clearTimeout(to); if (up) return; MP.busy = false; try { if (pc) pc.close(); } catch (e) {} try { if (MP.ws) { MP.ws.onclose = null; MP.ws.close(); } } catch (e) {} MP.ws = null; MP.g = null; mpNote(t); }
+    function fail(t) { clearTimeout(to); clearTimeout(rto); if (fbH) { fbH.stop(); fbH = null; } if (up) return; MP.busy = false; try { if (pc) pc.close(); } catch (e) {} try { if (MP.ws) { MP.ws.onclose = null; MP.ws.close(); } } catch (e) {} MP.ws = null; MP.g = null; mpNote(t); }
     MP.ws = mpOpenWS('bcg-' + mpRand(10), function () {
       pc = new RTCPeerConnection(MP_ICE);
       dc = pc.createDataChannel('bc');
       MP.g = { pc: pc, dc: dc };
-      pc.onicecandidate = function (e) { if (e.candidate) mpWS({ type: 'CANDIDATE', dst: hostId, payload: { candidate: e.candidate, type: 'data', connectionId: cid } }); };
-      dc.onopen = function () {
-        up = true; clearTimeout(to); MP.busy = false;
+      pc.onicecandidate = function (e) { var cm; if (!e.candidate) return; if (/ typ relay/.test(e.candidate.candidate || '')) relay = true; cm = { type: 'CANDIDATE', dst: hostId, payload: { candidate: e.candidate, type: 'data', connectionId: cid } }; if (sent) mpWS(cm); else pend.push(cm); };
+      function gOpen(rdc) {
+        if (up) return;
+        up = true; clearTimeout(to); clearTimeout(rto); MP.busy = false;
+        if (rdc) {
+          dc.onclose = null; dc.onopen = null; pc.onconnectionstatechange = null; try { pc.close(); } catch (e) {}
+          dc = rdc; MP.g = { pc: { close: function () { rdc.close(); } }, dc: rdc };
+          rdc.onmessage = function (ev) { mpGuestMsg(ev.data); };
+          rdc.onclose = function () { if (MP.role === 'guest') mpLost('The connection to the room dropped.'); };
+        } else if (fbH) { fbH.stop(); fbH = null; }
         MP.role = 'guest'; MP.code = code; MP.note = ''; MP.held = null; MP.fd = null; MP.pend = null; MP.net = 0; MP.roster = null; MP.seat = 0;
         try { if (MP.ws) { MP.ws.onclose = null; MP.ws.close(); } } catch (e) {} MP.ws = null;
         MP.seen = Date.now(); mpBeat();
         mpSend({ t: 'hello', nm: mpName(), ball: save.equipped, hat: save.hat, money: Math.round(save.money) });
         mpRender();
-      };
+      }
+      dc.onopen = function () { gOpen(null); };
       dc.onmessage = function (ev) { mpGuestMsg(ev.data); };
       dc.onclose = function () { if (MP.role === 'guest') mpLost('The connection to the room dropped.'); };
       pc.onconnectionstatechange = function () { if (MP.role === 'guest' && (pc.connectionState === 'failed')) mpLost('The connection to the room dropped.'); };
       pc.createOffer().then(function (o) { return pc.setLocalDescription(o); }).then(function () {
         mpWS({ type: 'OFFER', dst: hostId, payload: { sdp: pc.localDescription, type: 'data', connectionId: cid, label: 'bc', reliable: true, serialization: 'json' } });
+        sent = true; pend.forEach(function (c) { mpWS(c); }); pend = [];
       }).catch(function () { fail('Could not start the connection.'); });
-      to = setTimeout(function () { fail('Could not reach that room. Check the code, and that your friend still has the room open.'); }, 15000);
+      rto = setTimeout(function () { if (!up) fbH = fbJoin(code, function (rdc) { gOpen(rdc); }); }, 5000);
+      to = setTimeout(function () { fail(gotAns ? 'Found the room but your two connections could not link up (' + (pc ? pc.iceConnectionState : 'new') + (relay ? '' : ', no relay') + '). Try switching one of you between wifi and cellular, then try again.' : 'The room did not answer. Check the code, and that your friend still has the room open.'); }, 30000);
     }, function (m) {
       if (m.type === 'ANSWER' && pc && m.payload && m.payload.sdp) {
+        gotAns = true; mpNote('Found the room, linking up...');
         pc.setRemoteDescription(m.payload.sdp).then(function () { ready = true; cand.forEach(function (c) { pc.addIceCandidate(c).catch(mpNoop); }); cand = []; }).catch(mpNoop);
       } else if (m.type === 'CANDIDATE' && m.payload && m.payload.candidate) {
         if (ready) pc.addIceCandidate(m.payload.candidate).catch(mpNoop); else cand.push(m.payload.candidate);
@@ -10004,7 +10066,7 @@
     lbStop(); LB.mode = 'host'; LB.sig = '';
     var topic = LB_T + lbLid(MP.code);
     lbUrls().forEach(function (u) {
-      LB.c.push(lbConn(u, { t: topic, p: '{"x":1}' }, function (c) { lbSendRec(c); lbHostSoon(); }, function () {}, function () { lbHostSoon(); }));
+      LB.c.push(lbConn(u, { t: topic, p: '{"x":1}' }, function (c) { lbSendRec(c); try { c.ws.send(lbSubPkt(fbBase(MP.code) + 'join')); c.ws.send(lbSubPkt(fbBase(MP.code) + 'g/+')); } catch (e) {} lbHostSoon(); }, fbHostMsg, function () { lbHostSoon(); }));
     });
     LB.hbT = setInterval(function () { lbHostUpdate(true); }, 25000);
   }
