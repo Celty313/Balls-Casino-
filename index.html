@@ -436,6 +436,7 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .item { background: rgba(255,255,255,.04); border: 1px solid #1d4b43; border-radius: 16px; padding: 14px 12px; display: flex; flex-direction: column; align-items: center; gap: 7px; text-align: center; min-width: 0; }
   .item.on { border-color: var(--brass); background: rgba(217,172,79,.08); }
+  .lz { display: block; flex: none; } .lzav { width: 88px; height: 88px; background: radial-gradient(circle, rgba(255,255,255,.07) 0 44%, transparent 46%); } .lzhat { width: 96px; height: 96px; background: radial-gradient(circle, rgba(255,255,255,.06) 0 40%, transparent 42%); } .lzdie { width: 56px; height: 56px; background: radial-gradient(circle, rgba(255,255,255,.06) 0 40%, transparent 42%); }
   .item svg { width: 88px; height: 88px; filter: drop-shadow(0 6px 4px rgba(0,0,0,.4)); }
   .item h3 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 1.05rem; }
   .tier { font-size: .62rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
@@ -486,6 +487,16 @@
   .seatstrip:empty { display: none; }
   .stc { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1px; background: rgba(0,0,0,.32); border: 2px solid var(--cc, #d9ac4f); border-radius: 12px; padding: 5px 4px; min-width: 0; flex: 1 1 0; overflow: hidden; }
   .stc.shoot { box-shadow: 0 0 0 2px rgba(255,255,255,.55), 0 0 12px var(--cc); }
+  .stav { display: flex; align-items: flex-end; justify-content: center; gap: 0; }
+  .stav .skwrap { width: 28px; height: 28px; margin-left: -6px; }
+  .pkav > .skwrap { position: absolute; right: -16px; bottom: -2px; width: 30px; height: 30px; z-index: 2; }
+  .mphide { float: right; background: none; border: 1px solid rgba(217,172,79,.5); color: var(--brass); border-radius: 8px; padding: 2px 10px; font-size: .72rem; font-weight: 800; cursor: pointer; }
+  .mpchip { display: inline-flex; vertical-align: middle; }
+  .mpchip .chip { width: 22px; height: 22px; font-size: .45rem; cursor: default; box-shadow: 0 2px 0 rgba(0,0,0,.42), inset 0 0 0 1px rgba(0,0,0,.25); }
+  .mpchip .chip::before { inset: 5px; }
+  .rhand { display: flex; justify-content: center; margin: 2px 0; }
+  .rhand .hand.mini .card { margin-left: -9px; } .rhand .hand.mini .card:first-child { margin-left: 0; }
+  .rhand .hand.mini .card .rk { font-size: 7px; }
   .stc .sta { width: 38px; height: 38px; flex: none; }
   .stc .sta svg { width: 100%; height: 100%; display: block; }
   .stc .sti { min-width: 0; width: 100%; line-height: 1.2; }
@@ -7644,6 +7655,7 @@
     var pt2 = '';
     if (player.length) { var t = total(player); pt2 = (t.soft && t.total <= 21 ? 'soft ' : '') + t.total; }
     $('pTotal').textContent = pt2;
+    if (MP && MP.role) mpStatSoon();
   }
   function setStatus(text, cls) { var s = $('status'); s.textContent = text; s.className = 'status' + (cls ? ' ' + cls : ''); }
   function setAvatar(m, anim, soft) {
@@ -7825,6 +7837,48 @@
     if (!n) h = '<p class="empty">' + (shopFilter === 'afford' ? 'Nothing you can afford right now. Win a few hands.' : 'Nothing here yet.') + '</p>';
     $('grid').innerHTML = h;
   }
+
+  /* ---------- shop art that is drawn as it scrolls near the screen: same pictures, much less work when a shop opens ---------- */
+  var LZ = { io: {} };
+  function lz(k, a, b, c) { return '<span class="lz lz' + k + '" data-k="' + k + '" data-a="' + String(a).replace(/[^\w-]/g, '') + '"' + (b != null ? ' data-b="' + String(b).replace(/[^\w-]/g, '') + '"' : '') + (c != null ? ' data-c="' + (c | 0) + '"' : '') + '></span>'; }
+  function lzFillOne(el) {
+    var k, a, b, c, h;
+    if (!el || !el.parentNode) return;
+    k = el.getAttribute('data-k'); a = el.getAttribute('data-a'); b = el.getAttribute('data-b'); c = el.getAttribute('data-c');
+    try { h = k === 'av' ? avatarSVG(a, b || 'idle') : k === 'hat' ? hatSVG(a) : dieImg(a, parseInt(b, 10) || 1, parseInt(c, 10) || 56); el.insertAdjacentHTML('afterend', h); } catch (e) {}
+    if (el.parentNode) el.parentNode.removeChild(el);
+  }
+  function lzFillAll(root) { var els = (root || document).querySelectorAll('.lz'), i; for (i = els.length - 1; i >= 0; i--) lzFillOne(els[i]); }
+  LZ.q = []; LZ.raf = 0;
+  function lzPump() {
+    var t0 = Date.now(), mid = (window.innerHeight || 800) / 2, n = 0, el, i, keep = [];
+    LZ.raf = 0;
+    LZ.q = LZ.q.filter(function (e) { return e.parentNode; });
+    LZ.q.forEach(function (e) { var r = e.getBoundingClientRect(); e.__d = Math.abs(r.top + r.height / 2 - mid); });
+    LZ.q.sort(function (x, y) { return x.__d - y.__d; });
+    for (i = 0; i < LZ.q.length; i++) {
+      el = LZ.q[i];
+      if (n >= 4 && Date.now() - t0 > 10) { keep = LZ.q.slice(i); break; }
+      lzFillOne(el); n++;
+    }
+    LZ.q = keep;
+    if (LZ.q.length) LZ.raf = requestAnimationFrame(lzPump);
+  }
+  function lzScan(root) {
+    var key = (root && root.id) || 'x', els, i, io;
+    if (LZ.io[key]) { try { LZ.io[key].disconnect(); } catch (e) {} LZ.io[key] = null; }
+    els = (root || document).querySelectorAll('.lz');
+    if (!els.length) return;
+    if (typeof IntersectionObserver === 'undefined') { lzFillAll(root); return; }
+    for (i = Math.min(14, els.length) - 1; i >= 0; i--) lzFillOne(els[i]);
+    els = (root || document).querySelectorAll('.lz');
+    io = new IntersectionObserver(function (ents) {
+      ents.forEach(function (en) { if (en.isIntersecting) { io.unobserve(en.target); LZ.q.push(en.target); } });
+      if (LZ.q.length && !LZ.raf) LZ.raf = requestAnimationFrame(lzPump);
+    }, { rootMargin: '2400px 0px' });
+    LZ.io[key] = io;
+    for (i = 0; i < els.length; i++) io.observe(els[i]);
+  }
   /* ---------- crates ---------- */
   var shopTab = 'crates';
   var RO = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
@@ -7921,7 +7975,7 @@
       g.className = 'grid faces';
       h = '<div class="facepreview">' + avatarSVG(save.equipped, mood) + '<p><b>' + (FACES[mood] ? FACES[mood].n : 'Chill') + '</b>Pick a face for your ball. It keeps it until something happens at the table. Tap your ball on the table to flip through them.</p></div>';
       FACE_ORDER.forEach(function (k) {
-        h += '<button type="button" class="item facebtn' + (mood === k ? ' on' : '') + '" data-act="face" data-face="' + k + '">' + avatarSVG(save.equipped, k) + '<span>' + FACES[k].n + '</span></button>';
+        h += '<button type="button" class="item facebtn' + (mood === k ? ' on' : '') + '" data-act="face" data-face="' + k + '">' + lz('av', save.equipped, k) + '<span>' + FACES[k].n + '</span></button>';
       });
     } else {
       g.className = 'grid';
@@ -7934,7 +7988,7 @@
         n++;
         if (owned) {
           btn = on ? '<button class="btn ghost" disabled>Equipped</button>' : '<button class="btn primary" data-act="equip" data-id="' + a.id + '">Equip</button>';
-          h += '<div class="item' + (on ? ' on' : '') + '">' + avatarSVG(a.id, on ? 'happy' : 'idle') + '<h3>' + a.name + '</h3><div class="tier ' + t[1] + '">' + t[0] + (a.anim ? ' · Live' : '') + '</div><div class="note">' + a.note + '</div>' + btn + '</div>';
+          h += '<div class="item' + (on ? ' on' : '') + '">' + lz('av', a.id, on ? 'happy' : 'idle') + '<h3>' + a.name + '</h3><div class="tier ' + t[1] + '">' + t[0] + (a.anim ? ' · Live' : '') + '</div><div class="note">' + a.note + '</div>' + btn + '</div>';
         } else {
           var from = Object.keys(CRATES).filter(function (k) { return CRATES[k].odds[tierIdx(a)] > 0; }).map(function (k) { return CRATES[k].name.replace(' Deck', ''); }).join(', ');
           h += '<div class="item locked"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="#16302b" stroke="#1d4b43" stroke-width="2"/><text x="50" y="64" font-size="42" text-anchor="middle" fill="#2c5a50" font-family="Gloock,Georgia,serif">?</text></svg><h3>Locked</h3><div class="tier ' + t[1] + '">' + t[0] + (a.anim ? ' · Live' : '') + '</div><div class="note">Found in: ' + from + '</div></div>';
@@ -7942,7 +7996,7 @@
       });
       if (!n) h = '<p class="empty">Nothing here yet. Open an avatar deck.</p>';
     }
-    g.innerHTML = h;
+    g.innerHTML = h; lzScan(g);
     if (shopTab === 'csets') csPaintShop();
     if (shopTab === 'scs') scPaintShop(g);
   }
@@ -8072,11 +8126,11 @@
         if (owned) btn = on ? '<button class="btn ghost" disabled>Wearing</button>' : '<button class="btn primary" data-hact="wear" data-id="' + ht.id + '">Wear</button>';
         else if (save.money >= ht.price) btn = '<button class="btn primary" data-hact="buy" data-id="' + ht.id + '">Buy ' + fmt(ht.price) + '</button>';
         else btn = '<button class="btn ghost" disabled>' + fmt(ht.price) + '</button>';
-        h += '<div class="item' + (on ? ' on' : '') + '">' + hatSVG(ht.id) + '<h3>' + ht.name + '</h3><div class="tier ' + t[1] + '">' + t[0] + (ht.anim ? ' · Live' : '') + '</div><div class="note">' + ht.note + '</div>' + btn + '</div>';
+        h += '<div class="item' + (on ? ' on' : '') + '">' + lz('hat', ht.id) + '<h3>' + ht.name + '</h3><div class="tier ' + t[1] + '">' + t[0] + (ht.anim ? ' · Live' : '') + '</div><div class="note">' + ht.note + '</div>' + btn + '</div>';
       });
       if (!n) h = '<p class="empty">Nothing here yet.</p>';
     }
-    g.innerHTML = h;
+    g.innerHTML = h; lzScan(g);
   }
   function openHatShop() {
     $('hatshop').hidden = false; renderHats(); hsay(save.money < 120 ? 'poor' : 'open');
@@ -8576,15 +8630,16 @@
     var cards = [], any = false, sig;
     CR.npcs.forEach(function (n) { if (n.on) any = true; });
     if (any) {
-      cards.push({ nm: 'You', ball: save.equipped, hat: save.hat, mood: mood, money: save.money, tot: sumB(CR.me), c: '#d9ac4f', sh: CR.shooter === 0 });
-      CR.npcs.forEach(function (n, i) { if (n.on) cards.push({ nm: n.def.name.split(' ').pop(), ball: n.def.ball, hat: hatFor(n), mood: n.mood, money: n.money, tot: sumB(n.bets), c: NPCC[(n.ci != null ? n.ci : i) % 4], sh: CR.shooter === i + 1 }); });
+      cards.push({ nm: 'You', ball: save.equipped, hat: save.hat, mood: mood, money: save.money, tot: sumB(CR.me), c: '#d9ac4f', sh: CR.shooter === 0, sd: save.sidekick || '', cs: save.cset || '' });
+      CR.npcs.forEach(function (n, i) { if (n.on) cards.push({ nm: n.def.name.split(' ').pop(), ball: n.def.ball, hat: hatFor(n), mood: n.mood, money: n.money, tot: sumB(n.bets), c: NPCC[(n.ci != null ? n.ci : i) % 4], sh: CR.shooter === i + 1, sd: n.cz ? n.cz.sd : '', cs: n.cz ? n.cz.cs : '' }); });
     }
-    sig = cards.map(function (c) { return [c.nm, c.ball, c.hat, c.mood, Math.round(c.money), c.tot, c.sh].join('|'); }).join('~');
+    sig = cards.map(function (c) { return [c.nm, c.ball, c.hat, c.mood, Math.round(c.money), c.tot, c.sh, c.sd, c.cs].join('|'); }).join('~');
     if (sig === e.getAttribute('data-sig')) return;
     e.setAttribute('data-sig', sig);
     e.innerHTML = cards.map(function (c) {
-      return '<div class="stc' + (c.sh ? ' shoot' : '') + '" style="--cc:' + c.c + '"><div class="sta">' + avatarSVG(c.ball, c.mood, c.hat) + '</div><div class="sti"><b>' + String(c.nm).replace(/[<>&]/g, '') + '</b><small>' + fmt(c.money) + '</small><small><i>Bet ' + fmt(c.tot) + '</i></small>' + (c.sh ? '<em>Shooter</em>' : '') + '</div></div>';
+      return '<div class="stc' + (c.sh ? ' shoot' : '') + '" style="--cc:' + c.c + '"><div class="stav"><div class="sta">' + avatarSVG(c.ball, c.mood, c.hat) + '</div>' + sdHTMLFor(c.sd, c.mood) + '</div><div class="sti"><b>' + String(c.nm).replace(/[<>&]/g, '') + '</b><small>' + fmt(c.money) + '</small><small><i>Bet ' + fmt(c.tot) + '</i> ' + mpChipHTML(c.cs, c.tot) + '</small>' + (c.sh ? '<em>Shooter</em>' : '') + '</div></div>';
     }).join('');
+    mpPaintChips(e);
   }
   function toggleNpc(i) {
     var n = CR.npcs[i]; if (!n || CR.rolling || mpCG()) return;
@@ -8838,13 +8893,14 @@
   function tx(c, str, x, y, size, color, weight, align) {
     c.fillStyle = color; c.font = (weight || 800) + ' ' + size + 'px Manrope, Arial, sans-serif'; c.textAlign = align || 'center'; c.textBaseline = 'middle'; c.fillText(str, x, y);
   }
-  function chipAt(c, x, y, amt, k) {
-    var col = csColor(amt >= 500 ? 500 : amt >= 100 ? 100 : amt >= 25 ? 25 : 5);
+  function chipAt(c, x, y, amt, k, S, ini) {
+    var S0 = S || csCur(), col = csColor2(S0, amt >= 500 ? 500 : amt >= 100 ? 100 : amt >= 25 ? 25 : 5);
     c.save(); c.translate(x, y); c.scale(k || 1, k || 1);
     c.fillStyle = 'rgba(0,0,0,.4)'; c.beginPath(); c.ellipse(1.5, 4, 15, 7, 0, 0, 7); c.fill();
     c.fillStyle = col; c.beginPath(); c.arc(0, 0, 15, 0, 7); c.fill();
-    c.strokeStyle = csCur().e; c.lineWidth = 3; c.setLineDash([4, 4.4]); c.beginPath(); c.arc(0, 0, 12, 0, 7); c.stroke(); c.setLineDash([]);
+    c.strokeStyle = S0.e; c.lineWidth = 3; c.setLineDash([4, 4.4]); c.beginPath(); c.arc(0, 0, 12, 0, 7); c.stroke(); c.setLineDash([]);
     c.fillStyle = col; c.beginPath(); c.arc(0, 0, 9, 0, 7); c.fill();
+    if (ini) { c.restore(); return; }
     tx(c, amt >= 1000 ? (Math.round(amt / 100) / 10) + 'k' : String(Math.round(amt)), 0, 0.5, 9, '#fff', 800);
     c.restore();
   }
@@ -9171,9 +9227,9 @@
   }
   function drawNpcChips(c) {
     CR.npcs.forEach(function (n, i) {
-      var m, k, z, x, y, ini;
+      var m, k, z, x, y, ini, S;
       if (!n.on) return;
-      ini = n.def.name.charAt(0);
+      ini = n.def.name.charAt(0); S = n.cz && n.cz.cs ? CSMAP[n.cz.cs] : null;
       m = npcAmts(n.bets);
       for (k in m) {
         z = zcf(k); if (!z) continue;
@@ -9181,14 +9237,16 @@
         else if (k === 'come' || k === 'dcome') { x = z.x + z.w - 12 - i * 15; y = z.y + z.h / 2; }
         else if (k === 'field') { x = z.x + 14 + i * 14; y = z.y + z.h - 8; }
         else { x = z.x + z.w - 8; y = z.y + 9 + i * 12; }
-        npcChip(c, x, y, NPCC[(n.ci != null ? n.ci : i) % 4], ini);
+        if (S) chipAt(c, x, y, m[k], 0.56, S, true); else npcChip(c, x, y, NPCC[(n.ci != null ? n.ci : i) % 4], ini);
       }
     });
     /* who is who, up in the rail */
     var nx = 190;
     CR.npcs.forEach(function (n, i) {
+      var S;
       if (!n.on) return;
-      npcChip(c, nx, 24, NPCC[(n.ci != null ? n.ci : i) % 4], n.def.name.charAt(0));
+      S = n.cz && n.cz.cs ? CSMAP[n.cz.cs] : null;
+      if (S) chipAt(c, nx, 24, 100, 0.7, S, true); else npcChip(c, nx, 24, NPCC[(n.ci != null ? n.ci : i) % 4], n.def.name.charAt(0));
       tx(c, '$' + (n.money >= 1000 ? (Math.round(n.money / 100) / 10) + 'k' : Math.round(n.money)), nx + 10, 24.5, 8, 'rgba(245,239,224,.85)', 800, 'left');
       nx += 40;
     });
@@ -9225,7 +9283,7 @@
     drawBets(c);
     tx(c, 'SHOOTER · ' + shooterName().toUpperCase(), PW / 2, 462, 11, 'rgba(245,225,180,.7)', 800);
     tx(c, CR.last ? 'LAST ROLL ' + CR.d[0] + ' + ' + CR.d[1] + ' = ' + CR.last : 'BALLS CASINO', PW / 2, 478, 10, 'rgba(245,225,180,.45)', 800);
-    if (CR.anim || !CR.doneAt || Date.now() - CR.doneAt < 2400) { var dp = dicePos(); DS.render(c, dp.b, DPJ, curDie(), dp.v); }
+    if (CR.anim || !CR.doneAt || Date.now() - CR.doneAt < 2400) { var dp = dicePos(); DS.render(c, dp.b, DPJ, rollDie(), dp.v); }
   }
   /* plays a simulated throw: draw(frameBodies) each tick, sounds on impacts, then done(finalState) */
   function playThrow(sim, vals, draw, done) {
@@ -9342,6 +9400,36 @@
     } catch (e) {}
     return 0;
   }
+  /* what everyone else sees of you: your chips, card back, sidekick, and your blackjack hand */
+  function mpCos() { return { cs: save.cset || '', ct: save.cardTheme || '', sd: save.sidekick || '', die: save.die || '', dt: save.dtrail || '', rb: save.rball || '' }; }
+  function mpCosClean(z) { var o = { cs: '', ct: '', sd: '', die: '', dt: '', rb: '' }; z = z || {}; if (typeof z.cs === 'string' && CSMAP[z.cs]) o.cs = z.cs; if (typeof z.ct === 'string' && CTMAP[z.ct]) o.ct = z.ct; if (typeof z.sd === 'string' && SDMAP[z.sd]) o.sd = z.sd; if (typeof z.die === 'string' && DIMAP[z.die]) o.die = z.die; if (typeof z.dt === 'string' && DTRLMAP[z.dt]) o.dt = z.dt; if (typeof z.rb === 'string' && RBMAP[z.rb]) o.rb = z.rb; return o; }
+  /* whose dice, trail and roulette ball are on the table: the shooter's in craps, the host's in the games the host rolls */
+  function mpRollerCz() {
+    var n;
+    try {
+      if (!MP.role) return null;
+      if (game === 'craps') {
+        if (CR.rolling || CR.anim || CR.rz === undefined || !CR.doneAt || Date.now() - CR.doneAt >= 2400) { n = CR.shooter > 0 ? CR.npcs[CR.shooter - 1] : null; CR.rz = n && n.cz ? n.cz : null; }
+        return CR.rz;
+      }
+      if ((game === 'sicbo' || game === 'roulette') && MP.role === 'guest') return MP.hostCz || null;
+    } catch (e) {}
+    return null;
+  }
+  function rollDie() { var z = mpRollerCz(); return z && z.die && DIMAP[z.die] ? DIMAP[z.die] : curDie(); }
+  function mpHandOut() { try { return game === 'bj' && player.length ? player.slice(0, 8).map(function (c) { return c.r + c.s; }) : []; } catch (e) { return []; } }
+  function mpHandIn(l) { var o = []; (Array.isArray(l) ? l : []).slice(0, 8).forEach(function (t) { t = String(t); if (/^(10|[2-9JQKA])[♠♥♦♣]$/.test(t)) o.push({ r: t.slice(0, -1), s: t.slice(-1) }); }); return o; }
+  function sdHTMLFor(id, m) { var q = id ? SDMAP[id] : null; if (!q) return ''; return '<span class="skwrap sdm' + q.mv + '">' + sdSVG(q, sdMood(m || 'idle')) + '</span>'; }
+  function mpChipHTML(cs, amt) {
+    var S = cs ? CSMAP[cs] : null; amt = Math.round(+amt || 0);
+    if (!S || amt <= 0) return '';
+    return '<span class="mpchip" data-cs="' + cs + '"><span class="chip pv" style="--c:' + csColor2(S, amt >= 500 ? 500 : amt >= 100 ? 100 : amt >= 25 ? 25 : 5) + '">' + (amt >= 1000 ? (Math.round(amt / 100) / 10) + 'k' : amt) + '</span></span>';
+  }
+  function mpPaintChips(root) { var els = (root || document).querySelectorAll('.mpchip'), i, S; for (i = 0; i < els.length; i++) { S = CSMAP[els[i].getAttribute('data-cs')]; if (S) csPaint(els[i], S); } }
+  function mpHandHTML(cards, ct) {
+    if (!cards.length) return '';
+    return '<div class="rhand ctitem ct-' + (ct && CTMAP[ct] ? ct : 'classic') + '"><div class="hand pkrow mini" style="--cw:22px">' + cards.map(function (c) { return cardHTML(c, false, false); }).join('') + '</div></div>';
+  }
   function mpBjBet() { return phase === 'bet' ? (bet >= 5 ? bet : 0) : stake; }
   /* blackjack together: same dealer cards for everyone, each player plays their own hand */
   function bjDraw() { if (BJM.on && BJM.dq && BJM.k < BJM.dq.length) return BJM.dq[BJM.k++]; return draw(); }
@@ -9378,15 +9466,15 @@
   var mpStT = 0, mpRoT = 0;
   function mpStatSoon() { if (!MP.role || mpStT) return; mpStT = setTimeout(function () { mpStT = 0; mpStat(); }, 300); }
   function mpStat() {
-    if (MP.role === 'guest') mpSend({ t: 'st', bet: mpMyBet(), net: MP.net, m: Math.round(save.money) });
+    if (MP.role === 'guest') mpSend({ t: 'st', bet: mpMyBet(), net: MP.net, m: Math.round(save.money), h: mpHandOut(), cz: mpCos() });
     else if (MP.role === 'host') mpRosterSoon();
   }
   function mpRosterSoon() {
     if (MP.role !== 'host' || mpRoT) return;
     mpRoT = setTimeout(function () {
       mpRoT = 0; if (MP.role !== 'host') return;
-      var peers = mpJoinedPeers(), list = [{ nm: mpName(), ball: save.equipped, hat: save.hat, m: Math.round(save.money), bet: mpMyBet(), net: MP.net }];
-      peers.forEach(function (p) { list.push({ nm: p.nm, ball: p.ball, hat: p.hat, m: Math.round(p.st.m || p.money), bet: p.st.bet, net: p.st.net }); });
+      var peers = mpJoinedPeers(), list = [{ nm: mpName(), ball: save.equipped, hat: save.hat, m: Math.round(save.money), bet: mpMyBet(), net: MP.net, cz: mpCos(), h: mpHandOut() }];
+      peers.forEach(function (p) { list.push({ nm: p.nm, ball: p.ball, hat: p.hat, m: Math.round(p.st.m || p.money), bet: p.st.bet, net: p.st.net, cz: p.cz || null, h: p.st.h || [] }); });
       MP.roster = { list: list, me: 0 };
       peers.forEach(function (p, i) { mpSendTo(p, { t: 'roster', list: list, me: i + 1 }); });
       mpRender();
@@ -9394,10 +9482,10 @@
   }
 
   /* ----- craps seating and sync (only while the table is craps) ----- */
-  function mpSeatPub(n) { return { nm: n.def.name, ball: n.def.ball, hat: hatFor(n), on: n.on, money: Math.round(n.money), bets: n.bets, mood: n.mood, net: n.net, said: n.said, tag: n.remote ? 'Online friend' : n.def.tag }; }
+  function mpSeatPub(n) { return { nm: n.def.name, ball: n.def.ball, hat: hatFor(n), on: n.on, money: Math.round(n.money), bets: n.bets, mood: n.mood, net: n.net, said: n.said, tag: n.remote ? 'Online friend' : n.def.tag, cz: n.cz || null }; }
   function mpSnap() {
     return { q: ++MP.q, pt: CR.point, sh: CR.shooter, d: CR.d, last: CR.last, hr: CR.hardRoll,
-      seats: [{ nm: mpName(), ball: save.equipped, hat: save.hat, on: true, money: Math.round(save.money), bets: CR.me, mood: mood, net: MP.hostNet, said: '', tag: 'Host' }].concat(CR.npcs.map(mpSeatPub)) };
+      seats: [{ nm: mpName(), ball: save.equipped, hat: save.hat, on: true, money: Math.round(save.money), bets: CR.me, mood: mood, net: MP.hostNet, said: '', tag: 'Host', cz: mpCos() }].concat(CR.npcs.map(mpSeatPub)) };
   }
   function mpSyncSoon() {
     if (MP.sy) return;
@@ -9436,7 +9524,7 @@
     n = CR.npcs[slot];
     n.orig = n.orig || n.def;
     n.def = { name: peer.nm, ball: peer.ball, hatI: -1, tag: 'Online friend', bank: 0, unit: 0, style: 'remote', win: [], lose: [] };
-    n.hatId = peer.hat;
+    n.hatId = peer.hat; n.cz = peer.cz || null;
     n.remote = peer.id; n.on = true; n.money = Math.max(0, peer.st.m || peer.money || 0); n.bets = newBets(); n.mood = 'cool'; n.net = 0; n.said = ''; n.res = null;
     peer.slot = slot;
     CR.msg = n.def.name + ' joined the table.'; CR.cls = '';
@@ -9447,7 +9535,7 @@
   function mpRestoreSeat(slot) {
     var n = CR.npcs[slot];
     if (!n || !n.remote) return;
-    n.def = n.orig || n.def; n.orig = null; n.remote = null; n.hatId = null; n.res = null; n.bets = newBets(); n.net = 0; n.said = '';
+    n.def = n.orig || n.def; n.orig = null; n.remote = null; n.hatId = null; n.cz = null; n.res = null; n.bets = newBets(); n.net = 0; n.said = '';
     n.on = !!save.npcOn[slot]; n.money = n.def.bank; n.mood = n.on ? 'cool' : 'idle';
     if (n.on) npcPlan(n);
   }
@@ -9494,7 +9582,7 @@
     [0, 1, 2].forEach(function (k) {
       var peer = mpPkPeerAt(k), q = ps[k + 1];
       if (!peer) return;
-      q.remote = peer.id; q.name = peer.nm; q.def = { name: peer.nm, ball: peer.ball, hatI: -1, id: 'remote', win: [], lose: [] }; q.hatId = peer.hat;
+      q.remote = peer.id; q.name = peer.nm; q.def = { name: peer.nm, ball: peer.ball, hatI: -1, id: 'remote', win: [], lose: [] }; q.hatId = peer.hat; q.cz = peer.cz || null;
       q.stack = Math.max(0, Math.round(peer.st.m || peer.money || 0)); q.mood = 'cool';
       if (q.stack < bb * 2) { q.out = true; q.folded = true; q.act = 'Sitting out'; }
     });
@@ -9519,7 +9607,7 @@
       i = (seat + v) % 4; p = d.ps[i];
       show = (i === 0 ? false : p.show) || (d.over && !p.folded && d.board.length === 5 && hdLive().length > 1);
       ps.push({ nm: i === 0 ? mpName() : p.name, ball: i === 0 ? save.equipped : p.def.ball, hat: i === 0 ? save.hat : (p.hatId != null ? p.hatId : gHat({ def: p.def })),
-        stack: p.stack, folded: p.folded, allin: p.allin, bet: p.bet, tot: p.tot, act: p.act, said: p.said, mood: i === 0 ? mood : p.mood, out: !!p.out,
+        stack: p.stack, folded: p.folded, allin: p.allin, bet: p.bet, tot: p.tot, act: p.act, said: p.said, mood: i === 0 ? mood : p.mood, out: !!p.out, cz: i === 0 ? mpCos() : (p.cz || null),
         show: v === 0 || !!show, cards: (v === 0 || show) ? p.cards : p.cards.map(function () { return { r: '2', s: '♠' }; }) });
     }
     if (d.over && d.aw) net = d.aw.wins[seat] - d.ps[seat].tot;
@@ -9566,7 +9654,7 @@
       var nm = i === 0 ? 'You' : (mpClean(x.nm, 12) || 'Friend');
       return { i: i, name: nm, def: { name: nm, ball: /^[\w-]+$/.test(x.ball || '') ? x.ball : 'pale', hatI: -1, id: 'remote', win: [], lose: [] }, hatId: /^[\w-]*$/.test(x.hat || '') ? (x.hat || '') : '',
         stack: +x.stack || 0, cards: mpPkClean(x.cards), folded: !!x.folded, allin: !!x.allin, bet: +x.bet || 0, tot: +x.tot || 0, acted: false, mood: FACES[x.mood] ? x.mood : 'idle',
-        said: String(x.said || '').replace(/[<>&]/g, '').slice(0, 80), act: String(x.act || '').replace(/[<>&]/g, '').slice(0, 40), show: !!x.show, out: !!x.out };
+        said: String(x.said || '').replace(/[<>&]/g, '').slice(0, 80), act: String(x.act || '').replace(/[<>&]/g, '').slice(0, 40), show: !!x.show, out: !!x.out, cz: x.cz ? mpCosClean(x.cz) : null };
     });
     if (ps.length < 4) return;
     d = { bb: S.bb | 0, sb: +S.sb || 0, btn: S.btn | 0, deck: [], board: mpPkClean(S.board).slice(0, 5), pot: +S.pot || 0, street: S.street | 0, cur: S.cur | 0, high: +S.high || 0, minRaise: +S.minRaise || 0, raises: S.raises | 0,
@@ -9717,7 +9805,7 @@
     peer.nm = mpClean(m.nm, 12) || 'Friend';
     peer.ball = /^[\w-]+$/.test(m.ball || '') ? m.ball : 'pale';
     peer.hat = /^[\w-]*$/.test(m.hat || '') ? (m.hat || '') : '';
-    peer.money = Math.max(0, +m.money || 0); peer.st.m = peer.money; peer.joined = true;
+    peer.money = Math.max(0, +m.money || 0); peer.st.m = peer.money; peer.cz = mpCosClean(m.cz); peer.joined = true;
     mpSendTo(peer, { t: 'room', g: game });
     if (game === 'craps' || game === 'holdem') mpSeatPeer(peer);
     SND.chip(); mpRender(); mpRosterSoon();
@@ -9731,7 +9819,7 @@
     if (!peer.joined) return;
     if (m.t === 'bye') { mpDrop(peer); return; }
     if (m.t === 'bjplay' || m.t === 'bjdone' || m.t === 'bjskip') { peer.bj = m.t === 'bjplay' ? 'play' : m.t === 'bjdone' ? 'done' : 'skip'; bjCheck(); return; }
-    if (m.t === 'st') { peer.st = { bet: Math.max(0, +m.bet || 0), net: +m.net || 0, m: Math.max(0, +m.m || 0) }; mpRosterSoon(); return; }
+    if (m.t === 'st') { peer.st = { bet: Math.max(0, +m.bet || 0), net: +m.net || 0, m: Math.max(0, +m.m || 0), h: mpHandIn(m.h).map(function (c) { return c.r + c.s; }) }; if (m.cz) peer.cz = mpCosClean(m.cz); mpRosterSoon(); return; }
     if (m.t === 'pk') { mpPkHostMsg(peer, m); return; }
     if (game !== 'craps' || peer.slot < 0) return;
     n = CR.npcs[peer.slot]; if (!n || !n.remote) return;
@@ -9798,7 +9886,7 @@
         MP.role = 'guest'; MP.code = code; MP.note = ''; MP.held = null; MP.fd = null; MP.pend = null; MP.net = 0; MP.roster = null; MP.seat = 0;
         try { if (MP.ws) { MP.ws.onclose = null; MP.ws.close(); } } catch (e) {} MP.ws = null;
         MP.seen = Date.now(); mpBeat();
-        mpSend({ t: 'hello', nm: mpName(), ball: save.equipped, hat: save.hat, money: Math.round(save.money) });
+        mpSend({ t: 'hello', nm: mpName(), ball: save.equipped, hat: save.hat, money: Math.round(save.money), cz: mpCos() });
         mpRender();
       }
       dc.onopen = function () { gOpen(null); };
@@ -9855,7 +9943,7 @@
       if (o.g === S.sh) idx = k;
       return { def: { name: mpClean(x.nm, 12) || 'Friend', ball: /^[\w-]+$/.test(x.ball || '') ? x.ball : 'pale', hatI: -1, tag: mpClean(x.tag, 20), win: [], lose: [], bank: 0, unit: 0, style: 'remote' },
         hatId: /^[\w-]*$/.test(x.hat || '') ? (x.hat || '') : '', on: !!x.on, money: +x.money || 0, bets: mpCleanBets(x.bets), mood: FACES[x.mood] ? x.mood : 'idle', net: +x.net || 0,
-        said: String(x.said || '').replace(/[<>&]/g, '').slice(0, 80), ci: o.g === 0 ? 3 : o.g - 1, remote: 'x' };
+        said: String(x.said || '').replace(/[<>&]/g, '').slice(0, 80), ci: o.g === 0 ? 3 : o.g - 1, remote: 'x', cz: x.cz ? mpCosClean(x.cz) : null };
     });
     CR.shooter = S.sh === my ? 0 : idx + 1;
     CR.point = S.pt;
@@ -9870,7 +9958,7 @@
     else if (m.t === 'full') mpLost('That room is full.');
     else if (m.t === 'kicked') mpLost('The host removed you from the room.');
     else if (m.t === 'closed') mpLost('The host closed the room.');
-    else if (m.t === 'roster') { MP.roster = { list: m.list || [], me: m.me | 0 }; mpRender(); }
+    else if (m.t === 'roster') { MP.roster = { list: m.list || [], me: m.me | 0 }; MP.hostCz = m.list && m.list[0] ? mpCosClean(m.list[0].cz) : null; mpRender(); }
     else if (m.t === 'go') mpGoLocal(m);
     else if (m.t === 'bjdealer') bjDealerGo(m);
     else if (m.t === 'pkseat') { if (game === 'holdem') { MP.seat = m.seat | 0; HD = null; hdRender(); } }
@@ -10096,9 +10184,9 @@
     if (btn) btn.className = 'btn ghost ibtn' + (MP.role ? ' mpon' : '');
     if (b) {
       if (MP.role === 'host') {
-        h = '<div class="label">Your online room <small>' + (MP.priv ? 'private, friends need the code' : 'public, open to anyone') + '</small></div><div class="npc mpc"><span class="mpcode">' + MP.code + '</span><div class="npcinfo"><b>' + n + ' friend' + (n === 1 ? '' : 's') + ' in the room</b><small>Friends tap Join on your lobby or type the code. You pick the game from the menu and everyone follows. Up to 3 friends.</small></div><button class="btn ghost" type="button" data-mp="close">Close room</button>' + lbVisHTML() + '<p class="mpnote">' + lbHostStatus() + '</p>' + (MP.note ? '<p class="mpnote">' + MP.note + '</p>' : '') + '</div>';
+        h = '<div class="label">Your online room <small>' + (MP.priv ? 'private, friends need the code' : 'public, open to anyone') + '</small><button type="button" class="mphide" data-mp="hide">Hide</button></div><div class="npc mpc"><span class="mpcode">' + MP.code + '</span><div class="npcinfo"><b>' + n + ' friend' + (n === 1 ? '' : 's') + ' in the room</b><small>Friends tap Join on your lobby or type the code. You pick the game from the menu and everyone follows. Up to 3 friends.</small></div><button class="btn ghost" type="button" data-mp="close">Close room</button>' + lbVisHTML() + '<p class="mpnote">' + lbHostStatus() + '</p>' + (MP.note ? '<p class="mpnote">' + MP.note + '</p>' : '') + '</div>';
       } else if (MP.role === 'guest') {
-        h = '<div class="label">Online room <small>you are a guest</small></div><div class="npc mpc"><span class="mpcode">' + MP.code + '</span><div class="npcinfo"><b>Playing online</b><small>Your own chips and bets. The host picks the game and starts each round.</small></div><button class="btn ghost" type="button" data-mp="leave">Leave room</button>' + (MP.note ? '<p class="mpnote">' + MP.note + '</p>' : '') + '</div>';
+        h = '<div class="label">Online room <small>you are a guest</small><button type="button" class="mphide" data-mp="hide">Hide</button></div><div class="npc mpc"><span class="mpcode">' + MP.code + '</span><div class="npcinfo"><b>Playing online</b><small>Your own chips and bets. The host picks the game and starts each round.</small></div><button class="btn ghost" type="button" data-mp="leave">Leave room</button>' + (MP.note ? '<p class="mpnote">' + MP.note + '</p>' : '') + '</div>';
       } else {
         h = '<div class="label">Play online with friends <small>open lobbies or a code</small></div><div class="npc mpc"><div class="npcinfo"><b>Your name</b></div><input class="nm" id="mpName" maxlength="12" value="' + mpName() + '" aria-label="Your name"></div>' +
           '<div class="npc mpc"><div class="npcinfo"><b>Host a room</b><small>Public: anyone can tap Join. Private: listed with a lock, friends need your code.</small></div>' + lbVisHTML() + '<button class="btn" type="button" data-mp="host"' + (MP.busy ? ' disabled' : '') + '>Host a room</button></div>' +
@@ -10117,11 +10205,13 @@
       if (MP.role && R && game !== 'craps' && game !== 'holdem' && R.list.length > 1) {
         cards = R.list.map(function (x, i) {
           var me = i === R.me, net = +x.net || 0;
-          return '<div class="stc" style="--cc:' + NPCC[i % 4] + '"><div class="sta">' + avatarSVG(/^[\w-]+$/.test(x.ball || '') ? x.ball : 'pale', 'idle', /^[\w-]*$/.test(x.hat || '') ? (x.hat || '') : '') + '</div><div class="sti"><b>' + (me ? 'You' : mpClean(x.nm, 12)) + '</b><small>' + fmt(+x.m || 0) + '</small><small><i>Bet ' + fmt(+x.bet || 0) + '</i></small>' +
+          var cz = mpCosClean(x.cz), hand = mpHandIn(x.h), ht = hand.length ? total(hand).total : '';
+          return '<div class="stc" style="--cc:' + NPCC[i % 4] + '"><div class="stav"><div class="sta">' + avatarSVG(/^[\w-]+$/.test(x.ball || '') ? x.ball : 'pale', 'idle', /^[\w-]*$/.test(x.hat || '') ? (x.hat || '') : '') + '</div>' + sdHTMLFor(cz.sd, 'idle') + '</div><div class="sti"><b>' + (me ? 'You' : mpClean(x.nm, 12)) + '</b><small>' + fmt(+x.m || 0) + '</small><small><i>Bet ' + fmt(+x.bet || 0) + '</i> ' + mpChipHTML(cz.cs, +x.bet || 0) + '</small>' +
+            mpHandHTML(hand, cz.ct) + (ht !== '' ? '<small>' + ht + '</small>' : '') +
             (net ? '<em class="' + (net > 0 ? 'nw' : 'nl') + '">' + (net > 0 ? '+' : '-') + fmt(Math.abs(net)) + '</em>' : '') + '</div></div>';
         }).join('');
       }
-      if (rs.getAttribute('data-sig') !== cards) { rs.setAttribute('data-sig', cards); rs.innerHTML = cards; }
+      if (rs.getAttribute('data-sig') !== cards) { rs.setAttribute('data-sig', cards); rs.innerHTML = cards; mpPaintChips(rs); }
     }
   }
   function mpSetup() {
@@ -10135,6 +10225,7 @@
       var x = e.target.closest('button[data-mp]'); if (!x) return;
       var a = x.getAttribute('data-mp'), ne = $('mpName');
       if (ne) { save.mpName = mpClean(ne.value, 12) || 'Player'; persist(); }
+      if (a === 'hide') { MP.open = false; mpRender(); return; }
       if (a === 'host') mpHost();
       else if (a === 'join') mpJoin($('mpCode') ? $('mpCode').value : '');
       else if (a === 'close' || a === 'leave') mpLeave();
@@ -10772,7 +10863,7 @@
   })();
   if (!Array.isArray(save.dtOwned)) save.dtOwned = [];
   if (typeof save.dtrail !== 'string' || (save.dtrail && (!DTRLMAP[save.dtrail] || save.dtOwned.indexOf(save.dtrail) < 0))) save.dtrail = '';
-  function dtrCur() { return save.dtrail ? DTRLMAP[save.dtrail] : null; }
+  function dtrCur() { var z = mpRollerCz(); if (z) return z.dt && DTRLMAP[z.dt] ? DTRLMAP[z.dt] : null; return save.dtrail ? DTRLMAP[save.dtrail] : null; }
   function dtrHash(i, k) { var x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); }
   function dtrCol(s, a01, i, al, dl) { var hh = s.mode === 1 ? s.h + (s.h2 - s.h) * a01 : s.mode === 2 ? s.h + a01 * 200 + i * 9 : s.h; return 'hsla(' + (((hh % 360) + 360) % 360).toFixed(0) + ',' + s.sat + '%,' + Math.min(96, s.lt + (dl || 0)) + '%,' + Math.max(0, Math.min(1, al)).toFixed(3) + ')'; }
   function dtrStar(c, x, y, r, rot) { var i, a, q; c.beginPath(); for (i = 0; i < 10; i++) { a = rot - Math.PI / 2 + i * Math.PI / 5; q = i % 2 ? r * 0.45 : r; if (i) c.lineTo(x + q * Math.cos(a), y + q * Math.sin(a)); else c.moveTo(x + q * Math.cos(a), y + q * Math.sin(a)); } c.closePath(); }
@@ -11267,8 +11358,10 @@
   function hdSeatHTML(p) {
     var d = HD, show = p.show || (d.over && !p.folded && d.board.length === 5 && hdLive().length > 1);
     var cls = 'pkopp' + (p.folded ? ' fold' : '') + (!d.over && d.cur === p.i ? ' turn' : '');
-    return '<div class="' + cls + '"><div class="pkav">' + avatarSVG(p.def.ball, p.mood, p.hatId != null ? p.hatId : gHat({ def: p.def })) + (d.btn === p.i ? '<span class="dbtn">D</span>' : '') + '</div><b>' + p.def.name.split(' ').pop() + '</b><small>' + fmt(p.stack) + '</small>' +
-      cardsRow(p.cards, show ? null : 0, true, false) + '<em>' + (p.act || (p.folded ? 'Folded' : '')) + '</em>' + (p.said ? '<i>' + p.said + '</i>' : '') + '</div>';
+    var cz = p.cz, crow = cardsRow(p.cards, show ? null : 0, true, false);
+    if (cz && cz.ct) crow = '<div class="ctitem ct-' + cz.ct + '">' + crow + '</div>';
+    return '<div class="' + cls + '"><div class="pkav">' + avatarSVG(p.def.ball, p.mood, p.hatId != null ? p.hatId : gHat({ def: p.def })) + (d.btn === p.i ? '<span class="dbtn">D</span>' : '') + (cz ? sdHTMLFor(cz.sd, p.mood) : '') + '</div><b>' + p.def.name.split(' ').pop() + '</b><small>' + fmt(p.stack) + (cz && cz.cs && p.bet ? ' ' + mpChipHTML(cz.cs, p.bet) : '') + '</small>' +
+      crow + '<em>' + (p.act || (p.folded ? 'Folded' : '')) + '</em>' + (p.said ? '<i>' + p.said + '</i>' : '') + '</div>';
   }
   function hdRender() {
     if (MP.role === 'host') mpPkSyncSoon();
@@ -11313,6 +11406,7 @@
   }
   function pkSeats() {
     var s = $('seat5'), dd = $('dseat5');
+    try { mpPaintChips($('pkFelt')); } catch (e) {}
     if (s) { s.className = 'seat'; s.innerHTML = avatarSVG(save.equipped, mood, save.hat) + '<span class="tag">You</span>'; }
     if (dd) { dd.className = 'seat dseat'; dd.innerHTML = dealerSVG('smug') + '<span class="tag">' + dlrTag('Dealer') + '</span>'; }
   }
@@ -11667,11 +11761,11 @@
         if (diceFilter === 'missing' && owned) return;
         n++;
         btn = owned ? (on ? '<button class="btn ghost" disabled>Using</button>' : '<button class="btn primary" data-dact="use" data-id="' + d.id + '">Use</button>') : '<button class="btn ghost" disabled>Crates only</button>';
-        h += '<div class="item' + (on ? ' on' : '') + '"><div class="dpair">' + dieImg(owned ? d.id : d.id, 5, 56) + dieImg(d.id, 2, 56) + '</div><h3>' + d.name + '</h3><div class="tier ' + t[1] + '">' + (d.id === 'classic' ? 'Starter' : t[0]) + '</div><div class="note">' + d.note + '</div>' + btn + '</div>';
+        h += '<div class="item' + (on ? ' on' : '') + '"><div class="dpair">' + lz('die', d.id, 5, 56) + lz('die', d.id, 2, 56) + '</div><h3>' + d.name + '</h3><div class="tier ' + t[1] + '">' + (d.id === 'classic' ? 'Starter' : t[0]) + '</div><div class="note">' + d.note + '</div>' + btn + '</div>';
       });
       if (!n) h = '<p class="empty">Nothing here yet.</p>';
     }
-    g.innerHTML = h;
+    g.innerHTML = h; lzScan(g);
     if (diceTab === 'trails') dtrAfter(); else dtrStop();
   }
   function openDiceShop() { $('diceshop').hidden = false; renderDiceShop(); }
@@ -12371,7 +12465,7 @@
       var c = sbCtx; c.clearRect(0, 0, 340, 170);
       c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); if (c.roundRect) c.roundRect(10, 22, 320, 138, 18); else c.rect(10, 22, 320, 138); c.fill();
       c.strokeStyle = 'rgba(217,172,79,.55)'; c.lineWidth = 2; c.stroke();
-      DS.render(c, st.b, SEJ, curDie(), st.v);
+      DS.render(c, st.b, SEJ, rollDie(), st.v);
     } catch (e) {}
   }
   function sbRender() {
@@ -13348,7 +13442,7 @@
       }
     }
   })();
-  function rbCur() { return RBMAP[save.rball] || RB[0]; }
+  function rbCur() { var z = mpRollerCz(); if (z && z.rb && RBMAP[z.rb]) return RBMAP[z.rb]; return RBMAP[save.rball] || RB[0]; }
   function hs(h, s, l, a) { return 'hsla(' + (((h % 360) + 360) % 360).toFixed(0) + ',' + s + '%,' + l + '%,' + (a == null ? 1 : a) + ')'; }
   function rbH(n) { var s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
   function rbStar(c, x, y, s) { c.beginPath(); c.moveTo(x, y - s); c.quadraticCurveTo(x, y, x + s, y); c.quadraticCurveTo(x, y, x, y + s); c.quadraticCurveTo(x, y, x - s, y); c.quadraticCurveTo(x, y, x, y - s); c.fill(); }
