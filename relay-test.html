@@ -1,0 +1,20 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relay test</title>
+<style>body{font:16px system-ui;background:#101612;color:#eee;margin:0;padding:20px;max-width:560px}h1{font-size:1.3rem}button{font:inherit;padding:12px 18px;border-radius:10px;border:0;background:#d9ac4f;color:#111;font-weight:700}.r{margin:10px 0;padding:12px;border-radius:10px;background:#1b251f}.ok{border-left:5px solid #5fd38d}.no{border-left:5px solid #e0605a}.w{border-left:5px solid #888}small{color:#aaa}</style></head><body>
+<h1>Balls Casino relay test</h1><p>Open this on the phone that fails to join. Tap Run, wait about 10 seconds. Run it on both wifi and cellular.</p>
+<button id="go">Run test</button><div id="out"></div><p id="sum"></p>
+<script>
+var T=[['Google STUN','stun:stun.l.google.com:19302',0],['Twilio STUN','stun:global.stun.twilio.com:3478',0],
+['Relay A (openrelay, port 80)','turn:openrelay.metered.ca:80',1],['Relay A (port 443)','turn:openrelay.metered.ca:443',1],['Relay A (TLS 443)','turns:openrelay.metered.ca:443?transport=tcp',1],
+['Relay B (staticauth, port 80)','turn:staticauth.openrelay.metered.ca:80',1],['Relay B (port 443)','turn:staticauth.openrelay.metered.ca:443',1],['Relay B (TLS 443)','turns:staticauth.openrelay.metered.ca:443?transport=tcp',1]];
+function test(t){return new Promise(function(res){var cfg={iceServers:[t[2]?{urls:t[1],username:'openrelayproject',credential:'openrelayproject'}:{urls:t[1]}]},pc,found=false,done=false;
+try{pc=new RTCPeerConnection(cfg)}catch(e){return res('error: '+e.message)}
+function fin(v){if(done)return;done=true;try{pc.close()}catch(e){}res(v)}
+pc.createDataChannel('x');pc.onicecandidate=function(e){if(!e.candidate)return;var c=e.candidate.candidate;if(t[2]?/ typ relay/.test(c):/ typ srflx/.test(c)){fin(true)}};
+pc.createOffer().then(function(o){return pc.setLocalDescription(o)}).catch(function(e){fin('error')});setTimeout(function(){fin(false)},9000)})}
+document.getElementById('go').onclick=function(){
+if(typeof RTCPeerConnection==='undefined'){document.getElementById('sum').textContent='This browser has no WebRTC, so online play cannot work here. Open this in Chrome.';return}
+var out=document.getElementById('out');out.innerHTML='';var okRelay=0,okStun=0,n=0;
+T.forEach(function(t){var d=document.createElement('div');d.className='r w';d.textContent=t[0]+': testing...';out.appendChild(d);
+test(t).then(function(v){n++;if(v===true){d.className='r ok';d.textContent=t[0]+': WORKS';t[2]?okRelay++:okStun++}else{d.className='r no';d.textContent=t[0]+': '+(v===false?'no response':v)}
+if(n===T.length){document.getElementById('sum').textContent=okRelay?'At least one relay works, so joining across networks should work.':okStun?'The finding-your-address servers work but no relay does. Joining only works if your networks allow a direct link. Tell Claude.':'Nothing responded. This network may block online play, or you are offline.'}})})};
+</script></body></html>
